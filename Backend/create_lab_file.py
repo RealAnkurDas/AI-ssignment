@@ -44,7 +44,7 @@ class LabFile:
         for qno, question in enumerate(questions):
 
             # Step 1. Generate code using groq
-            guidelines = f"""
+            code_guidelines = f"""
             Return only executable Python code, no other text.
             - No markdown code blocks or formatting
             - No explanatory text or comments
@@ -67,12 +67,12 @@ class LabFile:
             print("Factorial:",result)
             """
             
-            response = client.chat.completions.create(
+            code_response = client.chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=[
                     {
                         "role": "system",
-                        "content": f"You are a Python code generator. {guidelines}"
+                        "content": f"You are a Python code generator. {code_guidelines}"
                     },
                     {
                         "role": "user",
@@ -82,7 +82,7 @@ class LabFile:
                 temperature=0.7
             )
 
-            code = response.choices[0].message.content.strip()
+            code = code_response.choices[0].message.content.strip()
             
             # Remove markdown code blocks if present
             if code.startswith("```python"):
@@ -92,23 +92,33 @@ class LabFile:
             if code.endswith("```"):
                 code = code[:-3]
 
-            # Step 2. Execute code and collect output
-            old_stdout = sys.stdout
-            sys.stdout = StringIO()
+            # Step 2. Generate appropriate output using groq
+            output_guidelines = f"""
+            Generate the expected output for the given Python code.
+            - Return only the output text, no other formatting
+            - For input-driven code, assume reasonable sample inputs
+            - Show what the program would display when executed
+            - Include any print statements, results, or program output
+            - Make it realistic and appropriate for the code
+            - Do not include code or explanations, just the output
+            """
             
-            output = ""
-            error = None
-            
-            try:
-                # Execute the code
-                exec(code.strip(), {})
-                output = sys.stdout.getvalue()
-            except Exception as e:
-                error = str(e)
-                output = f"Error executing code: {error}"
-            finally:
-                # Restore stdout
-                sys.stdout = old_stdout
+            output_response = client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": f"You are an output generator. {output_guidelines}"
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Generate the expected output for this Python code:\n\n{code}"
+                    }
+                ],
+                temperature=0.7
+            )
+
+            output = output_response.choices[0].message.content.strip()
 
             # Subtitle: Question
             document.add_paragraph('', style='List Number').add_run(str(question)).bold = True
@@ -137,9 +147,18 @@ class LabFile:
 
             print(f"Processed question {qno+1}...")
 
-        filename = f'Python Lab Week {lab_number}.docx'
+        # Create output directory if it doesn't exist
+        output_dir = 'output'
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
         
-        return filename
+        filename = f'{student_name} Python Lab Week {lab_number}.docx'
+        filepath = os.path.join(output_dir, filename)
+        
+        # Save the document
+        document.save(filepath)
+        
+        return filepath
 
 if __name__ == "__main__":
     q = ["WAP to print the first 10 natural numbers", 
